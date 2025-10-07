@@ -5,3 +5,10 @@ on:
     branches: [ main,dev ]
   pull_request:
     branches: [ main,dev ]
+
+jobs:
+  compile:
+    runs_on: ubuntu-latest
+    steps:
+      - name: Code checkout
+        uses: actions/checkout@v5
