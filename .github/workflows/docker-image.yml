@@ -18,15 +18,14 @@ jobs:
         with:
           node-version: '23'
 
-      - name: Install dependencies
-        run: npm install
-
       - name: Frontend Compilation (Syntax Check)
         run: |
           cd client
+          npm install
           npm run build
 
       - name: Backend Compilation (Syntax Check)
         run: |
           cd api
+          npm install
           npm run build
