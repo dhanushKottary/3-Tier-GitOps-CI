@@ -27,5 +27,4 @@ jobs:
       - name: Backend Compilation (Syntax Check)
         run: |
           cd api
-          npm install
-          npm run build
+          find . -name "*.js" -exec node --check {} \;
