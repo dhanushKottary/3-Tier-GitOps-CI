@@ -18,12 +18,15 @@ jobs:
         with:
           node-version: '23'
 
+      - name: Install dependencies
+        run: npm install
+
       - name: Frontend Compilation (Syntax Check)
         run: |
           cd client
-          find . -name "*.js" -exec node --check {} +
+          npm run build
 
       - name: Backend Compilation (Syntax Check)
         run: |
           cd api
-          find . -name "*.js" -exec node --check {} +
+          npm run build
