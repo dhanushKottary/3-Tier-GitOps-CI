@@ -171,6 +171,7 @@ jobs:
         working-directory: cd
         env:
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
         run: |
           curl -sL https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64 -o yq && sudo install yq /usr/local/bin/yq
 
