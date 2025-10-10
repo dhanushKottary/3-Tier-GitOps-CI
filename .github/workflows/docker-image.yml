@@ -197,7 +197,7 @@ jobs:
             = strenv(DOCKERHUB_USERNAME) + "/3-tier-frontend:" + strenv(IMAGE_TAG)
           ' k8s-prod/frontend.yaml
 
-          sudo rm /usr/local/bin/yq
+          sudo rm yq
 
       - name: Commit & push to CD repo
         working-directory: cd
