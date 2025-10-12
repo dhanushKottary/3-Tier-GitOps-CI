@@ -1,13 +1,10 @@
-name: Node.js CI
+name: CI for Node.js application
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main,dev ]
   pull_request:
-    branches: [ main ]
-
-permissions:
-  contents: write   # required to push to CD repo with GITHUB_TOKEN or PAT
+    branches: [ main,dev ]
 
 env:
   IMAGE_TAG: ${{ github.sha }}
@@ -16,33 +13,38 @@ jobs:
   compile:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Code checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node.js (LTS recommended)
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '23'   # use LTS if you don't need v23
+          node-version: '23'
 
       - name: Frontend Compilation (Syntax Check)
         run: |
           cd client
-          find . -name "*.js" -exec node --check {} +
+          npm install
+          npm run build
 
       - name: Backend Compilation (Syntax Check)
         run: |
           cd api
-          find . -name "*.js" -exec node --check {} +
-
+          find . -name "*.js" -exec node --check {} \;
+  
   gitleaks-scan:
     runs-on: ubuntu-latest
     needs: compile
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Gitleaks Setup
         uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Gitleaks Scan
         run: |
@@ -65,6 +67,8 @@ jobs:
           ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL,HIGH
+          # To fail the job when vulnerabilities are found, Add below line
+          # exit-code: 1
 
   build_backend_docker_image_and_push:
     runs-on: ubuntu-latest
@@ -92,8 +96,8 @@ jobs:
           file: ./api/Dockerfile
           push: true
           tags: |
-            adijaiswal/backend:latest
-            adijaiswal/backend:${{ env.IMAGE_TAG }}
+            ${{ vars.DOCKERHUB_USERNAME }}/3-tier-backend:latest
+            ${{ vars.DOCKERHUB_USERNAME }}/3-tier-backend:${{ env.IMAGE_TAG }}
 
   build_frontend_docker_image_and_push:
     runs-on: ubuntu-latest
@@ -121,8 +125,8 @@ jobs:
           file: ./client/Dockerfile
           push: true
           tags: |
-            adijaiswal/frontend:latest
-            adijaiswal/frontend:${{ env.IMAGE_TAG }}
+            ${{ vars.DOCKERHUB_USERNAME }}/3-tier-frontend:latest
+            ${{ vars.DOCKERHUB_USERNAME }}/3-tier-frontend:${{ env.IMAGE_TAG }}
 
   trivy_image_scan:
     runs-on: ubuntu-latest
@@ -137,7 +141,7 @@ jobs:
         uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: image
-          image-ref: adijaiswal/backend:${{ env.IMAGE_TAG }}
+          image-ref: ${{ vars.DOCKERHUB_USERNAME }}/3-tier-backend:${{ env.IMAGE_TAG }}
           format: table
           exit-code: '0'                 # set to '1' to fail on vulns
           ignore-unfixed: true
@@ -148,7 +152,7 @@ jobs:
         uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: image
-          image-ref: adijaiswal/frontend:${{ env.IMAGE_TAG }}
+          image-ref: ${{ vars.DOCKERHUB_USERNAME }}/3-tier-frontend:${{ env.IMAGE_TAG }}
           format: table
           exit-code: '0'
           ignore-unfixed: true
@@ -159,11 +163,22 @@ jobs:
     runs-on: ubuntu-latest
     needs: trivy_image_scan
     steps:
+      - name: Determine CD branch and environment folder
+        id: vars
+        run: |
+          if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+            echo "branch=main" >> $GITHUB_OUTPUT
+            echo "env_folder=k8s-prod" >> $GITHUB_OUTPUT
+          else
+            echo "branch=dev" >> $GITHUB_OUTPUT
+            echo "env_folder=k8s-dev" >> $GITHUB_OUTPUT
+          fi
+
       - name: Checkout CD repo
         uses: actions/checkout@v4
         with:
-          repository: jaiswaladi246/3-Tier-GitOps-CD
-          ref: main
+          repository: dhanushKottary/3-Tier-GitOps-CD
+          ref: ${{ steps.vars.outputs.branch }}
           token: ${{ secrets.CD_REPO_TOKEN }}
           path: cd
 
@@ -171,12 +186,14 @@ jobs:
         working-directory: cd
         env:
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          ENV_FOLDER: ${{ steps.vars.outputs.env_folder }}
         run: |
           curl -sL https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64 -o yq && sudo install yq /usr/local/bin/yq
 
           # -- Safety cleanup: remove any accidental .spec.template from Service docs
-          yq -i '(. | select(.kind=="Service")) |= del(.spec.template)' k8s-prod/backend.yaml
-          yq -i '(. | select(.kind=="Service")) |= del(.spec.template)' k8s-prod/frontend.yaml
+          yq -i '(. | select(.kind=="Service")) |= del(.spec.template)' ${ENV_FOLDER}/backend.yaml
+          yq -i '(. | select(.kind=="Service")) |= del(.spec.template)' ${ENV_FOLDER}/frontend.yaml
 
           # -- Update ONLY Deployment images (backend)
           yq -i '
@@ -184,8 +201,8 @@ jobs:
                | .spec.template.spec.containers[]
                | select(.name=="backend")
                | .image)
-            = "adijaiswal/backend:" + strenv(IMAGE_TAG)
-          ' k8s-prod/backend.yaml
+            = strenv(DOCKERHUB_USERNAME) + "/3-tier-backend:" + strenv(IMAGE_TAG)
+          ' ${ENV_FOLDER}/backend.yaml
 
           # -- Update ONLY Deployment images (frontend)
           yq -i '
@@ -193,8 +210,10 @@ jobs:
                | .spec.template.spec.containers[]
                | select(.name=="frontend")
                | .image)
-            = "adijaiswal/frontend:" + strenv(IMAGE_TAG)
-          ' k8s-prod/frontend.yaml
+            = strenv(DOCKERHUB_USERNAME) + "/3-tier-frontend:" + strenv(IMAGE_TAG)
+          ' ${ENV_FOLDER}/frontend.yaml
+
+          sudo rm yq
 
       - name: Commit & push to CD repo
         working-directory: cd
@@ -202,5 +221,5 @@ jobs:
           git config user.name "ci-bot"
           git config user.email "ci-bot@users.noreply.github.com"
           git add -A
-          git commit -m "bump images to ${IMAGE_TAG}" || echo "no changes"
-          git push
+          git commit -m "bump images to ${IMAGE_TAG} for ${GITHUB_REF_NAME}" || echo "no changes"
+          git push origin ${{ steps.vars.outputs.branch }}
