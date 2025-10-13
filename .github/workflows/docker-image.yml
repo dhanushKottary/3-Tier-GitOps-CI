@@ -9,7 +9,7 @@ on:
     types: [created]
 
 env:
-  IMAGE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha[0:7] }}
+  IMAGE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
 
 jobs:
   compile:
