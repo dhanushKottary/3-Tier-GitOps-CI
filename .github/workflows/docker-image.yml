@@ -154,9 +154,16 @@ jobs:
       - build_backend_docker_image
       - build_frontend_docker_image
     steps:
-      - name: Download backend and frontend image artifacts
+      - name: Download backend image artifact
         uses: actions/download-artifact@v4
         with:
+          name: backend-image
+          path: .
+
+      - name: Download frontend image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-image
           path: .
 
       - name: Load Docker images
