@@ -9,7 +9,7 @@ on:
     types: [created]
 
 env:
-  IMAGE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
+  IMAGE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha[0:7] }}
 
 jobs:
   compile:
@@ -99,8 +99,16 @@ jobs:
           push: false
           load: true
           tags: |
-            ${{ vars.DOCKERHUB_USERNAME }}/3-tier-backend:latest
             ${{ vars.DOCKERHUB_USERNAME }}/3-tier-backend:${{ env.IMAGE_TAG }}
+
+      - name: Save backend image as tarball
+        run: docker save ${{ vars.DOCKERHUB_USERNAME }}/3-tier-backend:${{ env.IMAGE_TAG }} -o backend.tar
+
+      - name: Upload backend image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-image
+          path: backend.tar
 
   build_frontend_docker_image:
     runs-on: ubuntu-latest
@@ -129,8 +137,16 @@ jobs:
           push: false
           load: true
           tags: |
-            ${{ vars.DOCKERHUB_USERNAME }}/3-tier-frontend:latest
             ${{ vars.DOCKERHUB_USERNAME }}/3-tier-frontend:${{ env.IMAGE_TAG }}
+
+      - name: Save frontend image as tarball
+        run: docker save ${{ vars.DOCKERHUB_USERNAME }}/3-tier-frontend:${{ env.IMAGE_TAG }} -o frontend.tar
+
+      - name: Upload frontend image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-image
+          path: frontend.tar
 
   trivy_image_scan:
     runs-on: ubuntu-latest
@@ -138,8 +154,15 @@ jobs:
       - build_backend_docker_image
       - build_frontend_docker_image
     steps:
-      - name: Checkout (noop, keeps workspace consistent)
-        uses: actions/checkout@v4
+      - name: Download backend and frontend image artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: .
+
+      - name: Load Docker images
+        run: |
+          docker load -i backend-image/backend.tar
+          docker load -i frontend-image/frontend.tar
 
       - name: Run Trivy image scan for backend
         uses: aquasecurity/trivy-action@0.28.0
@@ -165,33 +188,40 @@ jobs:
 
   push_docker_images:
     runs-on: ubuntu-latest
-    if: github.event_name == 'release'
-    needs:
-      - build_backend_docker_image
-      - build_frontend_docker_image
+    if: github.event_name == 'release' || github.event_name == 'push'
+    needs: trivy_image_scan
     env:
       IMAGE_TAG: ${{ github.event.release.tag_name }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Download backend and frontend image artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: .
+
+      - name: Load Docker images
+        run: |
+          docker load -i backend-image/backend.tar
+          docker load -i frontend-image/frontend.tar
+
       - name: Retag and push backend image
         run: |
-          docker tag ${{ vars.DOCKERHUB_USERNAME }}/3-tier-backend:latest \
-                      ${{ vars.DOCKERHUB_USERNAME }}/3-tier-backend:${{ env.IMAGE_TAG }}
+          docker tag ${{ vars.DOCKERHUB_USERNAME }}/3-tier-backend:${{ env.IMAGE_TAG }} \
+                      ${{ vars.DOCKERHUB_USERNAME }}/3-tier-backend:latest
           docker push ${{ vars.DOCKERHUB_USERNAME }}/3-tier-backend:${{ env.IMAGE_TAG }}
+          docker push ${{ vars.DOCKERHUB_USERNAME }}/3-tier-backend:latest
 
       - name: Retag and push frontend image
         run: |
-          docker tag ${{ vars.DOCKERHUB_USERNAME }}/3-tier-frontend:latest \
-                      ${{ vars.DOCKERHUB_USERNAME }}/3-tier-frontend:${{ env.IMAGE_TAG }}
+          docker tag ${{ vars.DOCKERHUB_USERNAME }}/3-tier-frontend:${{ env.IMAGE_TAG }} \
+                      ${{ vars.DOCKERHUB_USERNAME }}/3-tier-frontend:latest
           docker push ${{ vars.DOCKERHUB_USERNAME }}/3-tier-frontend:${{ env.IMAGE_TAG }}
+          docker push ${{ vars.DOCKERHUB_USERNAME }}/3-tier-frontend:latest
 
 
   update_cd_repo:
