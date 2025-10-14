@@ -56,6 +56,7 @@ jobs:
 
   trivy_fs_scan:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'release' || (github.event_name != 'release' && needs.gitleaks-scan.result == 'success') }}
     needs: gitleaks-scan
     steps:
       - name: Checkout code
