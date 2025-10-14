@@ -35,6 +35,7 @@ jobs:
           find . -name "*.js" -exec node --check {} \;
   
   gitleaks-scan:
+    if: ${{ github.event_name != 'release' }}  #gitleaks-scan does not support 'release' event
     runs-on: ubuntu-latest
     needs: compile
     steps:
