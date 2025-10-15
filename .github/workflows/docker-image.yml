@@ -34,29 +34,35 @@ jobs:
           cd api
           find . -name "*.js" -exec node --check {} \;
   
-  gitleaks-scan:
-    if: ${{ github.event_name != 'release' }}  #gitleaks-scan does not support 'release' event
+  gitleaks-scan:  
     runs-on: ubuntu-latest
     needs: compile
     steps:
+      - name: Skip for release #gitleaks-scan does not support 'release' event
+        if: ${{ github.event_name == 'release' }}
+        run: echo "Skipping Gitleaks for release event as gitleaks-scan does not support 'release' event."
+
       - name: Checkout code
+        if: ${{ github.event_name != 'release' }}
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Gitleaks Setup
+        if: ${{ github.event_name != 'release' }}
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Gitleaks Scan
+        if: ${{ github.event_name != 'release' }}
         run: |
           gitleaks detect --source ./client --exit-code 1
           gitleaks detect --source ./api --exit-code 1
 
   trivy_fs_scan:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'release' || (github.event_name != 'release' && needs.gitleaks-scan.result == 'success') }}
+     #if: ${{ github.event_name == 'release' || (github.event_name != 'release' && needs.gitleaks-scan.result == 'success') }}
     needs: gitleaks-scan
     steps:
       - name: Checkout code
