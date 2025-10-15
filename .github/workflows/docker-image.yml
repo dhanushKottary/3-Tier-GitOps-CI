@@ -225,7 +225,7 @@ jobs:
       - name: Determine CD branch and environment folder
         id: vars
         run: |
-          if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+          if [[ "${GITHUB_REF_NAME}" == "main" || "${GITHUB_EVENT_NAME}" == "release" ]]; then
             echo "branch=main" >> $GITHUB_OUTPUT
             echo "env_folder=k8s-prod" >> $GITHUB_OUTPUT
           else
